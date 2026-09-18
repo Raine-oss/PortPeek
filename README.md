@@ -3,8 +3,7 @@
 [![Rust](https://img.shields.io/badge/rust-stable-brightgreen.svg)](https://www.rust-lang.org/)
 [![Release](https://img.shields.io/github/v/release/Raine-oss/PortPeek?color=blue)](https://github.com/Raine-oss/PortPeek/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-passing-success.svg)](https://github.com/Raine-oss/PortPeek/actions)
-[![Tests](https://img.shields.io/badge/tests-35%20passed-success.svg)](https://github.com/Raine-oss/PortPeek)
+[![CI](https://github.com/Raine-oss/PortPeek/actions/workflows/ci.yml/badge.svg)](https://github.com/Raine-oss/PortPeek/actions/workflows/ci.yml)
 
 A fast, lightweight terminal TCP port scanner for connectivity checks and service troubleshooting, built with Rust. Uses standard asynchronous TCP connect scans, controlled concurrency via semaphores, latency measurement, and multi-format outputs (Terminal, JSON, CSV).
 
@@ -28,7 +27,8 @@ It does not attempt to replace large-scale network mappers like Nmap. Instead, i
 - **Latency Measurement**: Measures connection latency for all responsive open ports.
 - **Common Service Hints**: Maps port numbers to common standard services (SSH, HTTP, MySQL, PostgreSQL, Redis, Kafka, Minecraft) with an option to disable lookups.
 - **Multiple Output Formats**: Supports human-readable terminal tables, machine-readable JSON, comma-separated values (CSV), and a minimal quiet mode for shell scripting.
-- **Continuous Watch Mode**: Re-scans targets at configurable intervals for monitoring application startup and shutdown transitions.
+- **Continuous Watch Mode**: Re-scans targets at configurable intervals for monitoring application startup and shutdown transitions, with immediate graceful shutdown on Ctrl+C.
+- **Scripting Exit Codes**: Optional strict exit codes (`--fail-on-closed`, `--fail-if-none-open`) for automated deployment healthchecks and CI/CD pipelines.
 - **Dual-Stack Support**: Resolves and connects transparently over both IPv4 and IPv6 networks.
 - **Structured Error Engine**: Employs typed error handling with explicit diagnostic messages.
 
@@ -36,13 +36,15 @@ It does not attempt to replace large-scale network mappers like Nmap. Instead, i
 
 ## Platform Support Matrix
 
-| Operating System | Architecture | Binary Support | Status |
+PortPeek is tested automatically across native runners in continuous integration and built for the following target environments:
+
+| Operating System | Architecture | Build Support | CI Automated Testing |
 | :--- | :--- | :--- | :--- |
-| **Linux** | x86_64 | Standalone executable | Verified |
-| **Linux** | ARM64 (aarch64) | Standalone executable | Verified |
-| **macOS** | Apple Silicon (aarch64) | Standalone executable | Verified |
-| **macOS** | Intel (x86_64) | Standalone executable | Verified |
-| **Windows** | x86_64 | Standalone executable | Verified |
+| **Linux** | x86_64 (`x86_64-unknown-linux-gnu`) | Precompiled binary archive | Verified (`ubuntu-latest`) |
+| **macOS** | Apple Silicon (`aarch64-apple-darwin`) | Precompiled binary archive | Verified (`macos-latest` M-series) |
+| **Windows** | x86_64 (`x86_64-pc-windows-msvc`) | Precompiled binary (.exe) | Verified (`windows-latest`) |
+| **Linux** | ARM64 (`aarch64-unknown-linux-gnu`) | Source build (`cargo build`) | Cross-compilation target |
+| **macOS** | Intel (`x86_64-apple-darwin`) | Source build (`cargo build`) | Cross-compilation target |
 
 ---
 
@@ -268,6 +270,21 @@ PortPeek resolves and connects to IPv6 addresses directly:
 portpeek "::1" -p 8000,22
 ```
 
+### 9. Scripting and CI/CD Healthchecks
+
+By default, PortPeek exits with status code `0` whenever a scan completes successfully, even if all queried ports are closed. For automated deployment healthchecks and CI/CD pipelines, strict exit conditions can be enforced:
+
+- `--fail-on-closed` (alias: `--fail-if-closed`): Exits with code `2` if any queried port is closed or timed out.
+- `--fail-if-none-open`: Exits with code `2` if zero open ports are found.
+
+```bash
+# Verify database is active before running schema migrations (exits with code 2 if 5432 is closed)
+portpeek localhost -p 5432 -q --fail-on-closed
+
+# Ensure at least one web service port is listening
+portpeek localhost -p 80,8080 --fail-if-none-open
+```
+
 ---
 
 ## Technical Architecture
@@ -352,13 +369,13 @@ cargo bench --bench scan_benchmark -- --sample-size 10
 
 ## Test Suite and Verification
 
-The project includes 35 automated tests covering unit logic, integration with live TCP listeners, IPv6 dual-stack handling, and CLI execution.
+The project includes 52 automated tests covering unit logic, integration with live TCP listeners, IPv6 dual-stack handling, and CLI execution.
 
 ### Test Breakdown
 
-- **13 Library Unit Tests**: Default ports resolution, range boundaries, single port parsing, validation checks, service hint dictionary integrity, and IPv4/IPv6 address parsing.
-- **13 Binary Unit Tests**: Identical coverage on binary target modules.
-- **9 Integration Tests**:
+- **18 Library Unit Tests**: Default ports resolution, duplicate deduplication, range boundaries, single port parsing, range overflow detection, validation checks, service hint dictionary integrity, DNS failure, and IPv4/IPv6 hostname and address resolution.
+- **18 Binary Unit Tests**: Identical unit test coverage on binary target modules.
+- **16 Integration Tests**:
   - `test_ipv4_open_and_closed_ports`: Spawns real local `TcpListener`, confirms `OPEN`, drops listener, confirms `CLOSED`.
   - `test_ipv6_scan`: Spawns listener on `[::1]:0`, verifies IPv6 loopback detection.
   - `test_timeout_detection`: Probes non-routable RFC 5737 TEST-NET address, asserts `TIMEOUT` state.
@@ -368,6 +385,13 @@ The project includes 35 automated tests covering unit logic, integration with li
   - `test_cli_quiet_mode`: Validates pipeline-friendly quiet output.
   - `test_cli_no_service_hints`: Asserts suppression of service labels.
   - `test_cli_invalid_range_error`: Verifies process exit code and stderr on invalid range input.
+  - `test_cli_concurrency_zero_error`: Verifies failure code `1` and error message when concurrency is `0`.
+  - `test_cli_port_overflow_error`: Verifies failure code `1` when port range exceeds `65535`.
+  - `test_cli_duplicate_ports_dedup`: Verifies that duplicate ports are deduplicated to exact scan counts.
+  - `test_cli_fail_on_closed_exit_code`: Verifies exit code `2` when a scanned port is closed or timed out.
+  - `test_cli_fail_on_closed_success`: Verifies exit code `0` when all scanned ports are open.
+  - `test_cli_fail_if_none_open_exit_code`: Verifies exit code `2` when no scanned ports are open.
+  - `test_cli_watch_sigint`: Verifies immediate graceful shutdown upon receiving SIGINT (Ctrl+C).
 
 ### Executing Tests
 
@@ -381,8 +405,9 @@ cargo test
 
 | Exit Code | Meaning |
 | :--- | :--- |
-| `0` | Successful scan execution (independent of whether ports were open, closed, or timed out) |
+| `0` | Successful scan execution (default behavior, independent of port states) |
 | `1` | Configuration or execution error (unresolvable target, invalid port format, invalid range, invalid concurrency bound) |
+| `2` | Strict condition failed when `--fail-on-closed` or `--fail-if-none-open` is specified |
 
 ---
 

@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use cli::{Args, resolve_ports};
 use output::render_results;
-use scanner::{resolve_target, scan_ports};
+use scanner::{PortStatus, resolve_target, scan_ports};
 
 // Entry Point
 
@@ -68,9 +68,20 @@ async fn main() {
         );
 
         if !args.watch {
+            if args.fail_on_closed && results.iter().any(|r| r.status != PortStatus::Open) {
+                process::exit(2);
+            }
+            if args.fail_if_none_open && !results.iter().any(|r| r.status == PortStatus::Open) {
+                process::exit(2);
+            }
             break;
         }
 
-        tokio::time::sleep(Duration::from_secs(args.watch_interval)).await;
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                break;
+            }
+            _ = tokio::time::sleep(Duration::from_secs(args.watch_interval)) => {}
+        }
     }
 }

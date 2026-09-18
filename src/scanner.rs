@@ -157,6 +157,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_resolve_target_dns_failure() {
+        let res = resolve_target("invalid.nonexistent.domain.example").await;
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            PortPeekError::DnsResolutionFailed { target, .. } => {
+                assert_eq!(target, "invalid.nonexistent.domain.example");
+            }
+            other => panic!("Unexpected error: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_resolve_target_hostname() {
+        let ip = resolve_target("localhost").await.unwrap();
+        assert!(ip.is_loopback());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_target_ipv6_hostname() {
+        if let Ok(ip) = resolve_target("ip6-localhost").await {
+            assert_eq!(ip.to_string(), "::1");
+        }
+    }
+
+    #[tokio::test]
     async fn test_scan_port_open_and_closed() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();

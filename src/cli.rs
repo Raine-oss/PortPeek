@@ -94,6 +94,19 @@ pub struct Args {
         help = "Preset to quickly inspect common Minecraft ports"
     )]
     pub minecraft: bool,
+
+    #[arg(
+        long = "fail-on-closed",
+        visible_alias = "fail-if-closed",
+        help = "Exit with code 2 if any scanned port is closed or timed out"
+    )]
+    pub fail_on_closed: bool,
+
+    #[arg(
+        long = "fail-if-none-open",
+        help = "Exit with code 2 if no scanned ports are open"
+    )]
+    pub fail_if_none_open: bool,
 }
 
 // Helper Implementations
@@ -191,6 +204,8 @@ mod tests {
             watch_interval: 2,
             no_service_hints: false,
             minecraft,
+            fail_on_closed: false,
+            fail_if_none_open: false,
         }
     }
 
@@ -211,10 +226,28 @@ mod tests {
     }
 
     #[test]
+    fn test_duplicate_ports_deduplication() {
+        let args = create_test_args(Some("80,80,443,80,443,22".to_string()), false);
+        let ports = resolve_ports(&args).unwrap();
+        assert_eq!(ports, vec![22, 80, 443]);
+    }
+
+    #[test]
     fn test_port_range() {
         let args = create_test_args(Some("80-83".to_string()), false);
         let ports = resolve_ports(&args).unwrap();
         assert_eq!(ports, vec![80, 81, 82, 83]);
+    }
+
+    #[test]
+    fn test_port_overflow_range() {
+        let args = create_test_args(Some("65535-65536".to_string()), false);
+        let res = resolve_ports(&args);
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            PortPeekError::InvalidPortNumber(val) => assert_eq!(val, "65536"),
+            other => panic!("Unexpected error: {:?}", other),
+        }
     }
 
     #[test]
@@ -236,7 +269,11 @@ mod tests {
         assert!(args.validate().is_ok());
 
         args.concurrency = 0;
-        assert!(args.validate().is_err());
+        let err = args.validate().unwrap_err();
+        match err {
+            PortPeekError::InvalidConcurrency(c) => assert_eq!(c, 0),
+            other => panic!("Unexpected error: {:?}", other),
+        }
 
         args.concurrency = 100;
         args.timeout = 0;

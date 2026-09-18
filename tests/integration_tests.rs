@@ -136,3 +136,108 @@ fn test_cli_no_service_hints() {
         .stdout(predicate::str::contains("22,tcp"))
         .stdout(predicate::str::contains("SSH").not());
 }
+
+// Exit Code Integration Tests
+
+#[test]
+fn test_cli_concurrency_zero_error() {
+    let mut cmd = Command::cargo_bin("portpeek").unwrap();
+    cmd.arg("127.0.0.1").arg("-c").arg("0");
+
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("Invalid concurrency value"));
+}
+
+#[test]
+fn test_cli_port_overflow_error() {
+    let mut cmd = Command::cargo_bin("portpeek").unwrap();
+    cmd.arg("127.0.0.1").arg("-p").arg("65535-65536");
+
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("Invalid port number"));
+}
+
+#[test]
+fn test_cli_duplicate_ports_dedup() {
+    let mut cmd = Command::cargo_bin("portpeek").unwrap();
+    cmd.arg("127.0.0.1")
+        .arg("-p")
+        .arg("59993,59993,59994,59993")
+        .arg("-o")
+        .arg("json");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("\"total_scanned\": 2"));
+}
+
+#[test]
+fn test_cli_fail_on_closed_exit_code() {
+    let mut cmd = Command::cargo_bin("portpeek").unwrap();
+    cmd.arg("127.0.0.1")
+        .arg("-p")
+        .arg("59995")
+        .arg("--fail-on-closed");
+
+    cmd.assert().code(2);
+}
+
+#[tokio::test]
+async fn test_cli_fail_on_closed_success() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let mut cmd = Command::cargo_bin("portpeek").unwrap();
+    cmd.arg("127.0.0.1")
+        .arg("-p")
+        .arg(port.to_string())
+        .arg("--fail-on-closed");
+
+    cmd.assert().success().code(0);
+}
+
+#[test]
+fn test_cli_fail_if_none_open_exit_code() {
+    let mut cmd = Command::cargo_bin("portpeek").unwrap();
+    cmd.arg("127.0.0.1")
+        .arg("-p")
+        .arg("59996")
+        .arg("--fail-if-none-open");
+
+    cmd.assert().code(2);
+}
+
+// Watch Signal Handling Tests
+
+#[cfg(unix)]
+#[test]
+fn test_cli_watch_sigint() {
+    use std::thread;
+    use std::time::Duration;
+
+    let bin_path = assert_cmd::cargo::cargo_bin("portpeek");
+    let mut child = std::process::Command::new(bin_path)
+        .args([
+            "127.0.0.1",
+            "-p",
+            "59997",
+            "--watch",
+            "--watch-interval",
+            "1",
+        ])
+        .spawn()
+        .unwrap();
+
+    thread::sleep(Duration::from_millis(500));
+
+    unsafe {
+        libc::kill(child.id() as i32, libc::SIGINT);
+    }
+
+    let status = child.wait().unwrap();
+    assert!(status.success() || status.code() == Some(130) || status.code() == Some(0));
+}
