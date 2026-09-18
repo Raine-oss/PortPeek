@@ -1,0 +1,30 @@
+name: Feature Request
+description: Suggest a feature or improvement for PortPeek
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please note: PortPeek is strictly a lightweight TCP connectivity troubleshooting utility.
+        Features such as UDP scanning, SYN scanning, OS fingerprinting, banner grabbing, and vulnerability scanning are out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a specific problem or troubleshooting workflow?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution or CLI behavior you would like to see.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you have considered.
+    validations:
+      false

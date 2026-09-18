@@ -1,0 +1,45 @@
+name: Bug Report
+description: File a technical bug report for PortPeek
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please verify that the issue exists in the latest release before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: PortPeek Version
+      description: Run `portpeek --version` to determine the installed version.
+      placeholder: e.g., 0.2.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating System and Architecture
+      placeholder: e.g., Ubuntu 24.04 x86_64, macOS Sonoma ARM64, Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact Command Executed
+      description: What exact command did you execute?
+      placeholder: e.g., portpeek localhost -p 8000 -t 500
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened? Include terminal output or error logs.
+    validations:
+      required: true
