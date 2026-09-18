@@ -9,88 +9,81 @@ permissions:
   contents: write
 
 jobs:
-  build-release:
-    name: Build Binary (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact_name: portpeek
-            asset_name: portpeek-x86_64-unknown-linux-gnu.tar.gz
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            artifact_name: portpeek
-            asset_name: portpeek-aarch64-unknown-linux-gnu.tar.gz
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: portpeek
-            asset_name: portpeek-x86_64-apple-darwin.tar.gz
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact_name: portpeek
-            asset_name: portpeek-aarch64-apple-darwin.tar.gz
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact_name: portpeek.exe
-            asset_name: portpeek-x86_64-pc-windows-msvc.zip
-
+  build-rust-linux:
+    name: Build Linux x86_64
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
-
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install Cross-Compilation Tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Binary
+        run: cargo build --release
+      - name: Rename and Compress Artifact
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-
-      - name: Build Release Binary
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Package Unix Archive
-        if: runner.os != 'Windows'
-        run: |
-          tar -czvf ${{ matrix.asset_name }} -C target/${{ matrix.target }}/release ${{ matrix.artifact_name }}
-          shasum -a 256 ${{ matrix.asset_name }} > ${{ matrix.asset_name }}.sha256
-
-      - name: Package Windows Archive
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Compress-Archive -Path target/${{ matrix.target }}/release/${{ matrix.artifact_name }} -DestinationPath ${{ matrix.asset_name }}
-          $hash = (Get-FileHash -Path ${{ matrix.asset_name }} -Algorithm SHA256).Hash.ToLower()
-          "$hash  ${{ matrix.asset_name }}" | Out-File -FilePath "${{ matrix.asset_name }}.sha256" -Encoding ascii
-
-      - name: Upload Artifacts
+          mkdir -p dist
+          cp target/release/portpeek dist/portpeek-linux-x86_64
+          tar -czvf dist/portpeek-linux-x86_64.tar.gz -C target/release portpeek
+          cd dist && shasum -a 256 portpeek-linux-x86_64.tar.gz > portpeek-linux-x86_64.tar.gz.sha256
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset_name }}
-          path: |
-            ${{ matrix.asset_name }}
-            ${{ matrix.asset_name }}.sha256
+          name: portpeek-linux-x86_64
+          path: dist/*
+
+  build-rust-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Binary
+        run: cargo build --release
+      - name: Rename and Compress Artifact
+        run: |
+          mkdir -p dist
+          cp target/release/portpeek dist/portpeek-macos
+          tar -czvf dist/portpeek-macos.tar.gz -C target/release portpeek
+          cd dist && shasum -a 256 portpeek-macos.tar.gz > portpeek-macos.tar.gz.sha256
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: portpeek-macos
+          path: dist/*
+
+  build-rust-windows:
+    name: Build Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Binary
+        run: cargo build --release
+      - name: Rename and Compress Artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item target\release\portpeek.exe dist\portpeek-windows-x86_64.exe
+          Compress-Archive -Path target\release\portpeek.exe -DestinationPath dist\portpeek-windows-x86_64.zip
+          $hash = (Get-FileHash -Path dist\portpeek-windows-x86_64.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  portpeek-windows-x86_64.zip" | Out-File -FilePath dist\portpeek-windows-x86_64.zip.sha256 -Encoding ascii
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: portpeek-windows-x86_64
+          path: dist/*
 
   publish-release:
     name: Create GitHub Release
-    needs: build-release
+    needs: [build-rust-linux, build-rust-macos, build-rust-windows]
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
-
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: release-assets
-          merge-multiple: true
-
+          path: artifacts
+      - name: Prepare Release Assets
+        run: |
+          mkdir -p release-assets
+          cp -r artifacts/*/* release-assets/
       - name: Publish Release Assets
         uses: softprops/action-gh-release@v2
         with:
