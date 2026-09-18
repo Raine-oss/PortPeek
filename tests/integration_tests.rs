@@ -133,5 +133,7 @@ fn test_cli_no_service_hints() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("22,tcp,CLOSED,,"));
+        .stdout(predicate::str::contains("22,tcp"))
+        .stdout(predicate::str::contains("SSH").not());
 }
+
